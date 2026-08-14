@@ -1516,8 +1516,8 @@ export default function App() {
         <ScrollView
           tag={2}
           badge={updates?.modUpdates.length || undefined}
-          tabItem={<Label title={T.modsTab} systemImage="puzzlepiece.extension.fill" />}
-          navigationTitle={editingMod?.name ?? T.mods}
+          tabItem={<Label title={T.appStore} systemImage="app.badge.fill" />}
+          navigationTitle={editingMod?.name ?? T.appStore}
           navigationBarTitleDisplayMode="inline"
           toolbar={{ topBarLeading:
             <Button
@@ -1527,11 +1527,15 @@ export default function App() {
             /> }}
         >
           {editingMod == null ? (
-          <VStack alignment="leading" spacing={20} padding={{ horizontal: 16, top: 12, bottom: 34 }}>
-            <VStack alignment="leading" spacing={4}>
-              <Text font="largeTitle" fontWeight="bold">{T.mods}</Text>
-              <Text font="subheadline" foregroundStyle="secondary">{modCountLabel}</Text>
-            </VStack>
+          <VStack alignment="leading" spacing={22} padding={{ horizontal: 16, top: 12, bottom: 40 }}>
+            <HStack alignment="center">
+              <VStack alignment="leading" spacing={3}>
+                <Text font="largeTitle" fontWeight="bold">{T.appStore}</Text>
+                <Text font="subheadline" foregroundStyle="secondary">{T.storefrontSubtitle}</Text>
+              </VStack>
+              <Spacer />
+              <Button title={T.checkEverything} systemImage="arrow.clockwise" action={() => checkEverything()} buttonStyle="bordered" buttonBorderShape="capsule" />
+            </HStack>
             {status !== "" || busy != null ? (
               <HStack spacing={10} padding={13} background="tertiarySystemBackground" cornerRadius={15}>
                 {busy != null ? <ProgressView /> : <Image systemName="checkmark.circle.fill" foregroundStyle="green" />}
@@ -1540,73 +1544,83 @@ export default function App() {
               </HStack>
             ) : null}
             {latestModDownload == null ? null : managedDownloadPanel(latestModDownload)}
-            <Button action={showModHealth} buttonStyle="plain">
+            <VStack alignment="leading" spacing={12}>
+              <Text font="title2" fontWeight="bold">{T.featured}</Text>
               <RoundedRectangle
-                fill="secondarySystemBackground"
-                cornerRadius={20}
-                frame={{ maxWidth: "infinity", height: 122 }}
+                fill={{ color: "#251E4A", gradient: true }}
+                cornerRadius={26}
+                frame={{ maxWidth: "infinity", height: 210 }}
                 overlay={
-                  <HStack spacing={14} padding={16}>
-                    <RoundedRectangle
-                      fill={currentModHealthIssues.length === 0 ? "#173A32" : "#4A3518"}
-                      cornerRadius={14}
-                      frame={{ width: 52, height: 52 }}
-                      overlay={<Image systemName={currentModHealthIssues.length === 0 ? "checkmark.shield.fill" : "exclamationmark.shield.fill"} foregroundStyle={currentModHealthIssues.length === 0 ? "#5FE1B1" : "orange"} font={{ name: "system", size: 24 }} />}
-                    />
-                    <VStack alignment="leading" spacing={5}>
-                      <Text font="headline" fontWeight="semibold">{currentModHealthIssues.length === 0 ? T.modHealthReady : `${currentModHealthIssues.length} ${T.modHealthIssues}`}</Text>
-                      <Text font="caption" foregroundStyle="secondary" lineLimit={2}>{T.modStorage}: {formatByteCount(modByteCount)} · {modFileCount} {isGerman ? "Dateien" : "files"}</Text>
-                    </VStack>
+                  <VStack alignment="leading" spacing={12} padding={20} foregroundStyle="white">
+                    <HStack>
+                      <Image systemName="cube.transparent.fill" foregroundStyle="#B9AAFF" font={{ name: "system", size: 34 }} />
+                      <Spacer />
+                      <Text font="caption" fontWeight="semibold" foregroundStyle="#D7CFFF">EDITOR CHOICE</Text>
+                    </HStack>
                     <Spacer />
-                    <Image systemName="chevron.right" foregroundStyle="secondary" />
-                  </HStack>
+                    <VStack alignment="leading" spacing={4}>
+                      <Text font="title3" fontWeight="bold">{T.dramaticShape}</Text>
+                      <Text font="footnote" foregroundStyle="#D7CFFF" lineLimit={2}>{T.dramaticBody}</Text>
+                    </VStack>
+                    <HStack spacing={12}>
+                      <Button title={mods.mods.some(mod => mod.id === "DRAMATIC_SHAPE") ? T.open : T.get} systemImage="arrow.down.circle.fill" action={dramaticShape} buttonStyle="borderedProminent" buttonBorderShape="capsule" />
+                      <Button title={T.importMod} systemImage="square.and.arrow.down" action={importMods} buttonStyle="bordered" buttonBorderShape="capsule" />
+                    </HStack>
+                  </VStack>
                 }
               />
-            </Button>
-            {modFileCount > 10_000 ? <Text font="footnote" foregroundStyle="orange">{T.largeModLibrary}</Text> : null}
-            <Button action={showLoadReportHelp} buttonStyle="plain">
-              <HStack spacing={10} padding={13} frame={{ maxWidth: "infinity" }} background="tertiarySystemBackground" cornerRadius={15}>
-                <Image systemName="doc.text.magnifyingglass" foregroundStyle="#7457F5" />
-                <Text font="subheadline" fontWeight="medium">{T.loadReportTitle}</Text>
+            </VStack>
+            <VStack alignment="leading" spacing={12}>
+              <HStack>
+                <Text font="title2" fontWeight="bold">{T.updatesSection}</Text>
                 <Spacer />
-                <Image systemName="info.circle" foregroundStyle="secondary" />
+                {updates != null && updates.modUpdates.length > 0 ? (
+                  <Button title={T.updateAllMods} systemImage="arrow.down.circle.fill" action={updateAllAvailableMods} buttonStyle="borderedProminent" buttonBorderShape="capsule" />
+                ) : null}
               </HStack>
-            </Button>
-            <RoundedRectangle
-              fill={{ color: "#251E4A", gradient: true }}
-              cornerRadius={24}
-              frame={{ maxWidth: "infinity", height: 194 }}
-              overlay={
-                <VStack alignment="leading" spacing={10} padding={19} foregroundStyle="white">
-                  <HStack>
-                    <Image systemName="puzzlepiece.extension.fill" foregroundStyle="#B9AAFF" font={{ name: "system", size: 31 }} />
+              {updates == null || (updates.modUpdates.length === 0 && !updates.engineAvailable && updates.runtime?.available == null) ? (
+                <RoundedRectangle fill="secondarySystemBackground" cornerRadius={18} frame={{ maxWidth: "infinity", height: 76 }} overlay={
+                  <HStack spacing={12} padding={16}>
+                    <Image systemName="checkmark.seal.fill" foregroundStyle="green" font={{ name: "system", size: 24 }} />
+                    <VStack alignment="leading" spacing={2}>
+                      <Text font="subheadline" fontWeight="semibold">All Apps Are Up to Date</Text>
+                      <Text font="caption" foregroundStyle="secondary">{T.checkedEverything}</Text>
+                    </VStack>
                     <Spacer />
-                    <Text font="caption" foregroundStyle="#D7CFFF">{T.modRestart}</Text>
                   </HStack>
-                  <Text font="title3" fontWeight="bold">{T.dramaticShape}</Text>
-                  <Text font="footnote" foregroundStyle="#D7CFFF" lineLimit={2}>{T.externalModNotice}</Text>
-                  <HStack spacing={10}>
-                    <Button title={mods.mods.some(mod => mod.id === "DRAMATIC_SHAPE") ? T.update : T.install} systemImage="cube.transparent" action={dramaticShape} buttonStyle="borderedProminent" buttonBorderShape="capsule" />
-                    <Button title={T.importMod} systemImage="square.and.arrow.down" action={importMods} buttonStyle="bordered" buttonBorderShape="capsule" />
-                  </HStack>
+                } />
+              ) : (
+                <VStack spacing={8}>
+                  {updates.engineAvailable && updates.engineRelease != null ? (
+                    <RoundedRectangle fill="secondarySystemBackground" cornerRadius={18} frame={{ maxWidth: "infinity", height: 82 }} overlay={
+                      <HStack spacing={14} padding={16}>
+                        <Image systemName="gearshape.2.fill" foregroundStyle="#7457F5" font={{ name: "system", size: 26 }} />
+                        <VStack alignment="leading" spacing={2}>
+                          <Text font="subheadline" fontWeight="semibold">{T.engineComponent}</Text>
+                          <Text font="caption" foregroundStyle="secondary">v{updates.engineRelease.version} · {formatByteCount(updates.engineRelease.size)}</Text>
+                        </VStack>
+                        <Spacer />
+                        <Button title={T.update} systemImage="arrow.down" action={installAvailableEngine} buttonStyle="borderedProminent" buttonBorderShape="capsule" />
+                      </HStack>
+                    } />
+                  ) : null}
+                  {updates.modUpdates.map(item => (
+                    <RoundedRectangle fill="secondarySystemBackground" cornerRadius={18} frame={{ maxWidth: "infinity", height: 82 }} overlay={
+                      <HStack spacing={14} padding={16}>
+                        <Image systemName="puzzlepiece.extension.fill" foregroundStyle="#7457F5" font={{ name: "system", size: 26 }} />
+                        <VStack alignment="leading" spacing={2}>
+                          <Text font="subheadline" fontWeight="semibold">{item.mod.name}</Text>
+                          <Text font="caption" foregroundStyle="secondary">v{item.mod.version} → v{item.release.version}</Text>
+                        </VStack>
+                        <Spacer />
+                        <Button title={T.update} systemImage="arrow.down" action={() => updateMod(item.mod)} buttonStyle="borderedProminent" buttonBorderShape="capsule" />
+                      </HStack>
+                    } />
+                  ))}
                 </VStack>
-              }
-            />
-            <Button action={installFromGitHub} buttonStyle="plain">
-              <HStack spacing={11} padding={14} frame={{ maxWidth: "infinity" }} background="secondarySystemBackground" cornerRadius={16}>
-                <Image systemName="link.badge.plus" foregroundStyle="#5AA9FF" />
-                <VStack alignment="leading" spacing={3}>
-                  <Text font="subheadline" fontWeight="semibold">{T.installFromGitHub}</Text>
-                  <Text font="caption" foregroundStyle="secondary" lineLimit={2}>{T.installFromGitHubBody}</Text>
-                </VStack>
-                <Spacer />
-                <Image systemName="chevron.right" foregroundStyle="secondary" />
-              </HStack>
-            </Button>
-            {updates != null && updates.modUpdates.length > 0 ? (
-              <Button title={`${T.updateAllMods} (${updates.modUpdates.length})`} systemImage="arrow.down.circle.fill" action={updateAllAvailableMods} buttonStyle="borderedProminent" buttonBorderShape="capsule" />
-            ) : null}
-            <VStack alignment="leading" spacing={12} frame={{ maxWidth: "infinity" }}>
+              )}
+            </VStack>
+            <VStack alignment="leading" spacing={12}>
               <Text font="title2" fontWeight="bold">{T.installedMods}</Text>
               {mods.mods.length === 0 ? (
                 <RoundedRectangle fill="secondarySystemBackground" cornerRadius={22} frame={{ maxWidth: "infinity", height: 144 }} overlay={
@@ -1627,17 +1641,60 @@ export default function App() {
                         <RoundedRectangle fill={mod.enabled ? "#173A32" : "tertiarySystemBackground"} cornerRadius={14} frame={{ width: 52, height: 52 }} overlay={<Image systemName={mod.enabled ? "checkmark.circle.fill" : "circle"} foregroundStyle={mod.enabled ? "#5FE1B1" : "secondary"} font={{ name: "system", size: 25 }} />} />
                         <VStack alignment="leading" spacing={4}>
                           <Text font="headline" fontWeight="semibold" lineLimit={1}>{mod.name}</Text>
-                          <Text font="caption" foregroundStyle="secondary" lineLimit={1}>v{mod.version} · {formatByteCount(mod.byteLength)} · {mod.fileCount} {isGerman ? "Dateien" : "files"}</Text>
-                          <Text font="caption" foregroundStyle={mod.enabled ? "green" : "secondary"} lineLimit={1}>{mod.enabled ? (isGerman ? "Aktiv" : "Active") : (isGerman ? "Inaktiv" : "Inactive")} · {mod.storage === "archive" ? T.modPacked : T.modLegacy} · {mod.optionSchema?.rows.length ?? 0} {T.modSettingsCount}</Text>
+                          <Text font="caption" foregroundStyle="secondary" lineLimit={1}>v{mod.version} · {formatByteCount(mod.byteLength)} · {mod.fileCount} files</Text>
+                          <Text font="caption" foregroundStyle={mod.enabled ? "green" : "secondary"} lineLimit={1}>{mod.enabled ? "Active" : "Inactive"} · {mod.storage === "archive" ? T.modPacked : T.modLegacy} · {mod.optionSchema?.rows.length ?? 0} {T.modSettingsCount}</Text>
                         </VStack>
                         <Spacer />
-                        {updates?.modUpdates.some(item => item.mod.id === mod.id) ? <Image systemName="arrow.down.circle.fill" foregroundStyle="#7457F5" /> : null}
-                        <Image systemName="ellipsis.circle" foregroundStyle="secondary" />
+                        <Button title={T.open} action={() => modMenu(mod)} buttonStyle="bordered" buttonBorderShape="capsule" />
                       </HStack>
                     }
                   />
                 </Button>
               ))}
+            </VStack>
+            <VStack spacing={12}>
+              <Button action={installFromGitHub} buttonStyle="plain">
+                <HStack spacing={11} padding={14} frame={{ maxWidth: "infinity" }} background="secondarySystemBackground" cornerRadius={16}>
+                  <Image systemName="link.badge.plus" foregroundStyle="#5AA9FF" />
+                  <VStack alignment="leading" spacing={3}>
+                    <Text font="subheadline" fontWeight="semibold">{T.installFromGitHub}</Text>
+                    <Text font="caption" foregroundStyle="secondary" lineLimit={2}>{T.installFromGitHubBody}</Text>
+                  </VStack>
+                  <Spacer />
+                  <Image systemName="chevron.right" foregroundStyle="secondary" />
+                </HStack>
+              </Button>
+              <Button action={showModHealth} buttonStyle="plain">
+                <RoundedRectangle
+                  fill="secondarySystemBackground"
+                  cornerRadius={20}
+                  frame={{ maxWidth: "infinity", height: 122 }}
+                  overlay={
+                    <HStack spacing={14} padding={16}>
+                      <RoundedRectangle
+                        fill={currentModHealthIssues.length === 0 ? "#173A32" : "#4A3518"}
+                        cornerRadius={14}
+                        frame={{ width: 52, height: 52 }}
+                        overlay={<Image systemName={currentModHealthIssues.length === 0 ? "checkmark.shield.fill" : "exclamationmark.shield.fill"} foregroundStyle={currentModHealthIssues.length === 0 ? "#5FE1B1" : "orange"} font={{ name: "system", size: 24 }} />}
+                      />
+                      <VStack alignment="leading" spacing={5}>
+                        <Text font="headline" fontWeight="semibold">{currentModHealthIssues.length === 0 ? T.modHealthReady : `${currentModHealthIssues.length} ${T.modHealthIssues}`}</Text>
+                        <Text font="caption" foregroundStyle="secondary" lineLimit={2}>{T.modStorage}: {formatByteCount(modByteCount)} · {modFileCount} files</Text>
+                      </VStack>
+                      <Spacer />
+                      <Image systemName="chevron.right" foregroundStyle="secondary" />
+                    </HStack>
+                  }
+                />
+              </Button>
+              <Button action={showLoadReportHelp} buttonStyle="plain">
+                <HStack spacing={10} padding={13} frame={{ maxWidth: "infinity" }} background="tertiarySystemBackground" cornerRadius={15}>
+                  <Image systemName="doc.text.magnifyingglass" foregroundStyle="#7457F5" />
+                  <Text font="subheadline" fontWeight="medium">{T.loadReportTitle}</Text>
+                  <Spacer />
+                  <Image systemName="info.circle" foregroundStyle="secondary" />
+                </HStack>
+              </Button>
             </VStack>
             <Text font="footnote" foregroundStyle="secondary">{T.modSecurityBody}</Text>
           </VStack>

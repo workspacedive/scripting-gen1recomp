@@ -222,6 +222,11 @@ export const EN = {
   openRuntimeSource: "Open runtime source",
   profileAppliedNextLaunch: "The profile applies on the next launch and is reflected in the mod’s own options.",
   externalModNotice: "This is an external community project and is not bundled or redistributed by the suite. Its repository describes itself as a faithful copy of Dramatic Shape 1.8.2 and restricts redistribution of later code. The ZIP is fetched directly from its GitHub release only after confirmation.",
+  appStore: "App Store",
+  storefrontSubtitle: "Marketplace & Updates",
+  updatesSection: "Updates Available",
+  get: "GET",
+  open: "OPEN",
 }
 
 export const DE: typeof EN = {
@@ -444,6 +449,11 @@ export const DE: typeof EN = {
   openRuntimeSource: "Runtime-Quelle öffnen",
   profileAppliedNextLaunch: "Das Profil gilt beim nächsten Start und wird in den eigenen Mod-Optionen angezeigt.",
   externalModNotice: "Dies ist ein externes Community-Projekt und wird von der Suite weder gebündelt noch weiterverteilt. Das Repository beschreibt sich als originalgetreue Kopie von Dramatic Shape 1.8.2 und schränkt die Weiterverteilung späteren Codes ein. Das ZIP wird erst nach Bestätigung direkt aus dem GitHub-Release geladen.",
+  appStore: "App Store",
+  storefrontSubtitle: "Marktplatz & Updates",
+  updatesSection: "Verfügbare Updates",
+  get: "LADEN",
+  open: "ÖFFNEN",
 }
 
 export const T = isGerman ? DE : EN
