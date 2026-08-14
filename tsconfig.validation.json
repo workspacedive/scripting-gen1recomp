@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "jsx": "preserve",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "files": [
+    "tools/host-shim.d.ts",
+    "index.tsx",
+    "modules/types.ts",
+    "modules/paths.ts",
+    "modules/rom.ts",
+    "modules/library.ts",
+    "modules/player.ts",
+    "modules/releases.ts"
+  ]
+}

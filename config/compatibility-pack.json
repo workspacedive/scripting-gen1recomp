@@ -1,0 +1,146 @@
+{
+  "schema": 2,
+  "id": "gen1recomp-execution-layer",
+  "version": "2.1.0",
+  "suiteMinimum": "3.5.0",
+  "enginePatchRevision": 9,
+  "upstreamCore": {
+    "version": "0.1.78",
+    "file": "gen1recomp-core-0.1.78.love",
+    "sha256": "4dfd6e78808024eda0cce8b9fa5434a5846d1aa327912f7a1ce3c888e416c4fe",
+    "bytes": 4418896,
+    "immutable": true,
+    "hostPath": "/gen1recomp-core.love"
+  },
+  "executionLayer": {
+    "file": "gen1recomp-layer-2.1.0.love",
+    "sha256": "d0f9fbc9af9e2d11a26ad1a3c5639205c8d32f62941d7fc3847249d69314ca71",
+    "coreSha256": "4dfd6e78808024eda0cce8b9fa5434a5846d1aa327912f7a1ce3c888e416c4fe",
+    "builder": "modules/engine-patcher.ts#createCompatibilityLayerLove",
+    "precedence": "source-layer-before-appended-core-before-save"
+  },
+  "activation": {
+    "entrySource": "execution layer",
+    "coreTransport": "separate host-owned MEMFS file",
+    "coreMount": "SHA-256-verified in-memory FileData appended behind layer",
+    "saveIdentity": "appended after executable sources",
+    "failurePolicy": "reject pair before core execution; installed-pair failure falls back to bundled pair"
+  },
+  "updatePolicy": {
+    "layerAndCoreVersionedSeparately": true,
+    "monotonicEngineVersions": true,
+    "exactCoreDigestCompatibility": true,
+    "transactionalPairForCoreUpdates": true,
+    "rollback": "bundled immutable pair",
+    "independentLayerImport": true,
+    "layerManifestFileDigests": true
+  },
+  "requiredCapabilities": {
+    "lua": "5.1",
+    "love": "11.5",
+    "webAssembly": true,
+    "threads": false,
+    "localFileHost": true,
+    "chunkTransport": 1,
+    "nativePackedMods": 1,
+    "dynamicModOptions": 2,
+    "caughtAlertPolicy": 1,
+    "luaDiagnostics": 1,
+    "executionLayer": 1,
+    "immutableCoreMemoryMount": 1,
+    "hostVerifiedUpdates": 1,
+    "modSourceGuards": 1
+  },
+  "rules": [
+    {
+      "id": "lua51-source",
+      "target": "main.lua",
+      "layerPath": "compat/core-main.lua",
+      "kind": "compatibility"
+    },
+    {
+      "id": "potato-voxel-1.4.4-web-stability",
+      "target": "main.lua",
+      "layerPath": "compat/core-main.lua",
+      "kind": "stability"
+    },
+    {
+      "id": "web-bootstrap",
+      "target": "main.lua",
+      "layerPath": "compat/core-main.lua",
+      "kind": "host"
+    },
+    {
+      "id": "lua-wasm-telemetry",
+      "target": "main.lua",
+      "layerPath": "compat/core-main.lua",
+      "kind": "observability"
+    },
+    {
+      "id": "web-viewport",
+      "target": "conf.lua",
+      "layerPath": "compat/core-conf.lua",
+      "kind": "host"
+    },
+    {
+      "id": "packed-mod-loader",
+      "target": "src/mods/Loader.lua",
+      "layerPath": "src/mods/Loader.lua",
+      "kind": "compatibility"
+    },
+    {
+      "id": "native-mod-options",
+      "target": "src/mods/Loader.lua",
+      "layerPath": "src/mods/Loader.lua",
+      "kind": "bridge"
+    },
+    {
+      "id": "option-write-observer",
+      "target": "src/core/SaveData.lua",
+      "layerPath": "src/core/SaveData.lua",
+      "kind": "bridge"
+    },
+    {
+      "id": "cooperative-assets",
+      "target": "src/mods/AssetTransform.lua",
+      "layerPath": "src/mods/AssetTransform.lua",
+      "kind": "performance"
+    },
+    {
+      "id": "first-error-preservation",
+      "target": "src/debug/SwitchDiagnostics.lua",
+      "layerPath": "src/debug/SwitchDiagnostics.lua",
+      "kind": "diagnostics"
+    },
+    {
+      "id": "missing-cache-guard",
+      "target": "src/import/CacheFs.lua",
+      "layerPath": "src/import/CacheFs.lua",
+      "kind": "compatibility"
+    },
+    {
+      "id": "web-touch-controls",
+      "target": "src/core/TouchControls.lua",
+      "layerPath": "src/core/TouchControls.lua",
+      "kind": "host"
+    },
+    {
+      "id": "queueable-audio",
+      "target": "src/core/Music.lua",
+      "layerPath": "src/core/Music.lua",
+      "kind": "compatibility"
+    },
+    {
+      "id": "lua51-bit",
+      "target": "bit.lua",
+      "layerPath": "bit.lua",
+      "kind": "compatibility"
+    },
+    {
+      "id": "host-verified-updates",
+      "target": "src/update/Boot.lua",
+      "layerPath": "src/update/Boot.lua",
+      "kind": "policy"
+    }
+  ]
+}

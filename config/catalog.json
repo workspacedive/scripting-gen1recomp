@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "engine": {
+    "id": "gen1recomp",
+    "name": "Gen1Recomp",
+    "repo": "bryanthaboi/gen1recomp",
+    "bundledVersion": "0.1.78",
+    "bundledSha256": "d0f9fbc9af9e2d11a26ad1a3c5639205c8d32f62941d7fc3847249d69314ca71",
+    "assetSuffix": ".love",
+    "maximumBytes": 16777216
+  },
+  "webRuntime": {
+    "id": "love-web",
+    "name": "L\u00d6VE Web Runtime",
+    "loveVersion": "11.5",
+    "repo": "Davidobot/love.js",
+    "branch": "master",
+    "bundledCommit": "c4f04e185033a7c9fbefa9be3bec88c41a90421b",
+    "files": {
+      "love.js": "6917d551d1dafea3b2a5315480792bdd57772029f094d9e992b259ef7fcb3b14",
+      "love.wasm": "8e955d3ca1db20c2c3509313c0093cf81826fc391f509194f85562ac57c601fa"
+    }
+  },
+  "featuredMods": [
+    {
+      "id": "DRAMATIC_SHAPE",
+      "name": "Dramatic Shape Voxel Mod",
+      "repo": "scottcandy34/DramaticShapeVoxelMod-latest",
+      "presets": {
+        "balanced": {
+          "shadows": false,
+          "aa": 0,
+          "atmos": "low",
+          "water": "sky",
+          "viewbox": 0
+        },
+        "efficient": {
+          "shadows": false,
+          "aa": 0,
+          "atmos": "off",
+          "water": "off",
+          "viewbox": 0
+        }
+      }
+    }
+  ]
+}

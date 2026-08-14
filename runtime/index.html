@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'none'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Gen1Recomp</title>
+  <link rel="stylesheet" href="runtime.css">
+</head>
+<body>
+  <main id="stage" aria-label="Gen1Recomp game">
+    <canvas id="canvas" width="1024" height="768" tabindex="0" aria-label="Game display"></canvas>
+    <section id="loading" role="status" aria-live="polite">
+      <div class="mark" aria-hidden="true">GR</div>
+      <p class="eyebrow">GEN1RECOMP · LOCAL RUNTIME</p>
+      <h1 id="loadingTitle">Preparing the game</h1>
+      <p id="status">Loading local LÖVE WebAssembly…</p>
+      <div class="bar"><span id="barFill"></span></div>
+      <p class="note">The first launch extracts ROM data locally and can take about 20–30 seconds.</p>
+    </section>
+    <section id="fatal" role="alert" hidden>
+      <div class="fatalIcon" aria-hidden="true">!</div>
+      <h1>Gen1Recomp could not start</h1>
+      <p id="fatalMessage">Close the player and try again.</p>
+      <p id="fatalHint">The complete console trace was saved locally. Export it from Settings → Console diagnostics.</p>
+      <button id="fatalClose" type="button">Close player</button>
+    </section>
+    <aside id="modWork" role="status" aria-live="polite" hidden>
+      <span class="modWorkSpinner" aria-hidden="true"></span>
+      <span id="modWorkText">Optimizing mod assets…</span>
+    </aside>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+      var startedAt = window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now();
+      var sequence = 0;
+      var maximumChunk = 12000;
+      var maximumBatchEntries = 48;
+      var diagnosticQueue = [];
+      var diagnosticFlushTimer = null;
+      var diagnosticPostChain = Promise.resolve();
+      var pendingAlerts = [];
+      var nativeAlert = typeof window.alert === 'function' ? window.alert.bind(window) : null;
+
+      function valueText(value) {
+        if (typeof value === 'string') return value;
+        if (value instanceof Error) return value.name + ': ' + value.message + (value.stack ? '\n' + value.stack : '');
+        if (value && typeof value === 'object') {
+          var seen = typeof WeakSet === 'function' ? new WeakSet() : null;
+          try {
+            var json = JSON.stringify(value, function (_key, item) {
+              if (typeof item === 'bigint') return item.toString() + 'n';
+              if (item instanceof Error) return { name: item.name, message: item.message, stack: item.stack || null };
+              if (item && typeof item === 'object' && seen) {
+                if (seen.has(item)) return '[Circular]';
+                seen.add(item);
+              }
+              return item;
+            });
+            if (typeof json === 'string') return json;
+          } catch (_) {}
+        }
+        try { return String(value); } catch (_) { return '[Unprintable value]'; }
+      }
+
+      function argumentsText(values) {
+        return Array.prototype.map.call(values, valueText).join(' ');
+      }
+
+      function flushDiagnosticQueue() {
+        if (diagnosticFlushTimer != null) {
+          clearTimeout(diagnosticFlushTimer);
+          diagnosticFlushTimer = null;
+        }
+        if (diagnosticQueue.length === 0) return diagnosticPostChain;
+        var entries = diagnosticQueue.splice(0, diagnosticQueue.length);
+        diagnosticPostChain = diagnosticPostChain.catch(function () {}).then(function () {
+          try {
+            var handlers = window.webkit && window.webkit.messageHandlers;
+            if (!handlers || !handlers.runtimeDiagnostic) return null;
+            return Promise.resolve(handlers.runtimeDiagnostic.postMessage({ schema: 1, entries: entries }));
+          } catch (_) {
+            return null;
+          }
+        });
+        return diagnosticPostChain;
+      }
+
+      function queueDiagnostic(payload, urgent) {
+        diagnosticQueue.push(payload);
+        if (urgent || diagnosticQueue.length >= maximumBatchEntries) {
+          flushDiagnosticQueue();
+        } else if (diagnosticFlushTimer == null) {
+          diagnosticFlushTimer = setTimeout(flushDiagnosticQueue, 40);
+        }
+      }
+
+      function emit(source, level, event, message) {
+        var text = typeof message === 'string' ? message : valueText(message);
+        var eventSequence = ++sequence;
+        var occurredAt = new Date().toISOString();
+        var elapsed = (window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now()) - startedAt;
+        var parts = Math.max(1, Math.ceil(text.length / maximumChunk));
+        for (var part = 1; part <= parts; part += 1) {
+          var payload = {
+            sequence: eventSequence,
+            occurredAt: occurredAt,
+            elapsedMs: Math.max(0, elapsed),
+            source: source,
+            level: level,
+            event: event,
+            message: text.slice((part - 1) * maximumChunk, part * maximumChunk),
+            part: parts > 1 ? part : undefined,
+            parts: parts > 1 ? parts : undefined
+          };
+          queueDiagnostic(payload, level === 'fatal');
+        }
+      }
+
+      var consoleCounts = Object.create(null);
+      var consoleTimers = Object.create(null);
+      var consoleMethods = ['debug', 'log', 'info', 'warn', 'error', 'trace', 'assert', 'dir', 'dirxml', 'table',
+        'group', 'groupCollapsed', 'groupEnd', 'time', 'timeLog', 'timeEnd', 'count', 'countReset', 'clear'];
+      consoleMethods.forEach(function (name) {
+        if (!window.console || typeof console[name] !== 'function') return;
+        var original = console[name].bind(console);
+        console[name] = function () {
+          if (name === 'assert' && arguments[0]) return original.apply(console, arguments);
+          var text = argumentsText(arguments);
+          var label = arguments.length ? valueText(arguments[0]) : 'default';
+          var now = window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now();
+          if (name === 'count') {
+            consoleCounts[label] = (consoleCounts[label] || 0) + 1;
+            text = label + ': ' + consoleCounts[label];
+          } else if (name === 'countReset') {
+            delete consoleCounts[label];
+            text = label + ': reset';
+          } else if (name === 'time') {
+            consoleTimers[label] = now;
+            text = label + ': timer started';
+          } else if (name === 'timeLog' || name === 'timeEnd') {
+            text = label + ': ' + (consoleTimers[label] == null ? 'timer not found' : (now - consoleTimers[label]).toFixed(3) + ' ms') +
+              (arguments.length > 1 ? ' ' + Array.prototype.slice.call(arguments, 1).map(valueText).join(' ') : '');
+            if (name === 'timeEnd') delete consoleTimers[label];
+          }
+          if (name === 'trace' || name === 'warn' || name === 'error' || name === 'assert') {
+            var stack = new Error('console.' + name).stack;
+            if (stack) text += '\nConsole call stack:\n' + stack;
+          }
+          emit('console', name === 'warn' ? 'warning' : (name === 'error' || name === 'assert') ? 'error' : 'info', name, text);
+          return original.apply(console, arguments);
+        };
+      });
+
+      window.addEventListener('error', function (event) {
+        var detail = [
+          event && event.message ? event.message : 'Unknown browser error',
+          event && event.filename ? 'URL: ' + event.filename : '',
+          event && event.lineno ? 'Line: ' + event.lineno + ':' + (event.colno || 0) : '',
+          event && event.error && event.error.stack ? 'Stack:\n' + event.error.stack : ''
+        ].filter(Boolean).join('\n');
+        emit('browser', 'fatal', 'window_error', detail);
+      }, true);
+
+      window.addEventListener('unhandledrejection', function (event) {
+        emit('browser', 'fatal', 'unhandled_rejection', valueText(event ? event.reason : undefined));
+      });
+
+      window.alert = function (message) {
+        var text = valueText(message);
+        var ready = window.Gen1RecompGameLoaded === true;
+        emit('browser', ready ? 'warning' : 'fatal', ready ? 'caught_exception_alert' : 'alert', text);
+        pendingAlerts.push(text);
+        if (typeof window.Gen1RecompReportAlert === 'function') window.Gen1RecompReportAlert(text);
+      };
+
+      window.Gen1Diagnostics = {
+        emit: emit,
+        valueText: valueText,
+        consumeAlerts: function () {
+          var copy = pendingAlerts.slice();
+          pendingAlerts.length = 0;
+          return copy;
+        },
+        flush: flushDiagnosticQueue,
+        nativeAlertAvailable: typeof nativeAlert === 'function'
+      };
+
+      emit('browser', 'info', 'bootstrap', JSON.stringify({
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        viewport: { width: window.innerWidth, height: window.innerHeight, scale: window.devicePixelRatio || 1 },
+        screen: { width: screen.width, height: screen.height },
+        webAssembly: typeof WebAssembly === 'object',
+        crossOriginIsolated: window.crossOriginIsolated === true,
+        visibility: document.visibilityState
+      }));
+    })();
+  </script>
+  <script src="launch.js"></script>
+  <script src="binary-transport.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var canvas = document.getElementById('canvas');
+      var loading = document.getElementById('loading');
+      var statusNode = document.getElementById('status');
+      var barFill = document.getElementById('barFill');
+      var fatal = document.getElementById('fatal');
+      var fatalMessage = document.getElementById('fatalMessage');
+      var fatalHint = document.getElementById('fatalHint');
+      var fatalClose = document.getElementById('fatalClose');
+      var modWork = document.getElementById('modWork');
+      var modWorkText = document.getElementById('modWorkText');
+      var saveRoot = '/home/web_user/love/pokemon-love2d';
+      var gameLoaded = false;
+      window.Gen1RecompGameLoaded = false;
+      var snapshotBusy = false;
+      var lastSnapshotInventory = null;
+      var runtimeOptions = (window.Gen1Launch && window.Gen1Launch.runtimeOptions) || {};
+      var hostCapabilities = runtimeOptions.hostCapabilities || {};
+      var saveSyncSeconds = Number(runtimeOptions.saveSyncSeconds);
+      if ([10, 15, 30, 60].indexOf(saveSyncSeconds) === -1) saveSyncSeconds = 15;
+      var wasmValidation = false;
+      var wasmMemoryGrowth = false;
+      try {
+        wasmValidation = typeof WebAssembly === 'object' && typeof WebAssembly.validate === 'function'
+          && WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0]));
+        var capabilityMemory = new WebAssembly.Memory({ initial: 1, maximum: 2 });
+        wasmMemoryGrowth = capabilityMemory.grow(1) === 1 && capabilityMemory.buffer.byteLength === 131072;
+        capabilityMemory = null;
+      } catch (_) {}
+      diagnostic('capability', 'info', 'runtime_capabilities', JSON.stringify({
+        wasmValidation: wasmValidation,
+        wasmMemoryGrowth: wasmMemoryGrowth,
+        webAssembly: typeof WebAssembly === 'object',
+        webGL2: typeof WebGL2RenderingContext === 'function',
+        hostCapabilities: hostCapabilities,
+        performanceMemory: !!(performance && performance.memory)
+      }));
+      var metricStart = 0;
+      var metricLast = 0;
+      var metricFrames = 0;
+      var metricSlow = 0;
+      var metricWorst = 0;
+      var diagnostics = window.Gen1Diagnostics;
+
+      if ((navigator.language || '').toLowerCase().indexOf('de') === 0) {
+        fatalClose.textContent = 'Player schließen';
+        fatalHint.textContent = 'Der vollständige Console-Trace wurde lokal gespeichert. Export: Einstellungen → Console-Diagnose.';
+      }
+
+      function diagnostic(source, level, event, message) {
+        if (diagnostics && typeof diagnostics.emit === 'function') diagnostics.emit(source, level, event, message);
+      }
+
+      function nativeHandler(name) {
+        var handlers = window.webkit && window.webkit.messageHandlers;
+        return handlers && handlers[name];
+      }
+
+      function postNative(name, payload) {
+        var handler = nativeHandler(name);
+        if (!handler) {
+          diagnostic('bridge', 'warning', 'handler_missing', name);
+          return Promise.resolve(null);
+        }
+        try {
+          return Promise.resolve(handler.postMessage(payload)).catch(function (error) {
+            diagnostic('bridge', 'error', 'post_rejected', name + '\n' + (error && error.stack ? error.stack : String(error)));
+            return null;
+          });
+        } catch (error) {
+          diagnostic('bridge', 'error', 'post_failed', name + '\n' + (error && error.stack ? error.stack : String(error)));
+          return Promise.resolve(null);
+        }
+      }
+
+      function requestPlayerClose(payload, fallbackMessage) {
+        var handler = nativeHandler('closePlayer');
+        if (!handler) {
+          diagnostic('bridge', 'error', 'close_handler_missing', fallbackMessage);
+          showFatal(fallbackMessage);
+          return;
+        }
+        function failed(error) {
+          diagnostic('bridge', 'error', 'close_rejected', error && error.stack ? error.stack : String(error));
+          showFatal(fallbackMessage);
+        }
+        try {
+          var flush = window.Gen1Diagnostics && typeof window.Gen1Diagnostics.flush === 'function'
+            ? window.Gen1Diagnostics.flush() : Promise.resolve();
+          Promise.resolve(flush).catch(function () {}).then(function () {
+            return handler.postMessage(payload);
+          }).catch(failed);
+        } catch (error) {
+          failed(error);
+        }
+      }
+
+      function resetMetrics(now) {
+        metricStart = now || 0;
+        metricLast = now || 0;
+        metricFrames = 0;
+        metricSlow = 0;
+        metricWorst = 0;
+      }
+
+      function metricFrame(now) {
+        if (gameLoaded) {
+          if (!metricStart) resetMetrics(now);
+          if (metricLast) {
+            var elapsed = now - metricLast;
+            if (elapsed > 25) metricSlow += 1;
+            if (elapsed > metricWorst) metricWorst = elapsed;
+          }
+          metricFrames += 1;
+          metricLast = now;
+        }
+        requestAnimationFrame(metricFrame);
+      }
+      requestAnimationFrame(metricFrame);
+      setInterval(function () {
+        if (!gameLoaded || !metricStart || metricFrames < 2) return;
+        var elapsed = performance.now() - metricStart;
+        var metric = {
+          fps: Math.max(0, Math.min(240, (metricFrames - 1) * 1000 / Math.max(1, elapsed))),
+          slowFramePercent: Math.max(0, Math.min(100, metricSlow * 100 / Math.max(1, metricFrames - 1))),
+          worstFrameMs: Math.max(0, Math.min(10000, metricWorst))
+        };
+        var runtimeTelemetry = {
+          schema: 1,
+          frame: metric,
+          wasmHeapBytes: Module && Module.HEAPU8 ? Module.HEAPU8.byteLength : null,
+          jsHeapBytes: performance && performance.memory && Number.isFinite(performance.memory.usedJSHeapSize)
+            ? performance.memory.usedJSHeapSize : null,
+          transport: window.Gen1BinaryTransport ? {
+            wasm: window.Gen1BinaryTransport.status('wasm'),
+            package: window.Gen1BinaryTransport.status('package')
+          } : null,
+          wasmValidation: wasmValidation,
+          wasmMemoryGrowth: wasmMemoryGrowth,
+          hostCapabilities: hostCapabilities
+        };
+        diagnostic('performance', 'debug', 'runtime_telemetry', JSON.stringify(runtimeTelemetry));
+        postNative('runtimeStatus', { kind: 'metric', message: JSON.stringify(metric) });
+        resetMetrics(performance.now());
+      }, 10000);
+
+      function setStatus(text, ratio) {
+        statusNode.textContent = text || 'Starting Gen1Recomp…';
+        if (typeof ratio === 'number') {
+          barFill.style.width = Math.max(4, Math.min(100, ratio * 100)) + '%';
+        }
+        diagnostic('runtime', 'debug', 'status', statusNode.textContent + (typeof ratio === 'number' ? ' ratio=' + ratio : ''));
+      }
+
+      function showFatal(message) {
+        loading.hidden = true;
+        canvas.style.visibility = 'hidden';
+        fatalMessage.textContent = message || 'Close the player and try again.';
+        fatal.hidden = false;
+        diagnostic('runtime', 'fatal', 'fatal_panel', fatalMessage.textContent);
+        postNative('runtimeStatus', { kind: 'error', message: fatalMessage.textContent });
+      }
+
+      window.Gen1RecompReportAlert = function (message) {
+        if (gameLoaded) {
+          // Davidobot's compatibility build emits this generic alert while
+          // constructing some LÖVE exceptions even when Lua pcall catches the
+          // exception. Preserve the complete diagnostic but do not dismiss a
+          // demonstrably still-running game on this ambiguous signal alone.
+          diagnostic('browser', 'warning', 'caught_exception_alert', message);
+          diagnostic('browser', 'warning', 'caught_exception_alert_retained', 'Gameplay remains open pending an explicit terminal signal.');
+          postNative('runtimeStatus', { kind: 'warning', message: message });
+        } else {
+          showFatal(message);
+        }
+      };
+      if (diagnostics && typeof diagnostics.consumeAlerts === 'function') {
+        diagnostics.consumeAlerts().forEach(window.Gen1RecompReportAlert);
+      }
+      fatalClose.addEventListener('click', function () {
+        diagnostic('ui', 'info', 'fatal_close', 'The user closed the failed player.');
+        requestPlayerClose({ reason: 'fatal-close-button' }, fatalMessage.textContent || 'The local player could not close. Retry Close player.');
+      });
+
+      function resizeRuntime() {
+        var width = Math.max(320, Math.floor(window.innerWidth));
+        var height = Math.max(320, Math.floor(window.innerHeight));
+        if (window.Module && typeof Module.setCanvasSize === 'function') {
+          Module.setCanvasSize(width, height);
+        } else {
+          canvas.width = width;
+          canvas.height = height;
+        }
+      }
+
+      function bytesToBase64(bytes) {
+        var binary = '';
+        for (var offset = 0; offset < bytes.length; offset += 32768) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + 32768));
+        }
+        return btoa(binary);
+      }
+
+      function listSavePaths() {
+        var fs = Module && Module.FS;
+        if (!fs) return [];
+        var paths = [];
+        function addPath(relative) {
+          try {
+            var stat = fs.stat(saveRoot + '/' + relative);
+            if (!fs.isDir(stat.mode)) paths.push(relative);
+          } catch (_) {}
+        }
+        ['options.lua', 'options.lua.bak', 'options.lua.tmp', 'native_mod_state.json',
+          'native_mod_options.json', 'lua-error.log', 'lua-error.log.1'].forEach(addPath);
+        try {
+          fs.readdir(saveRoot).forEach(function (name) {
+            if (/^save(?:_(?:blue|yellow|gold))?\.lua(?:\.(?:bak|tmp))?$/.test(name)) addPath(name);
+          });
+        } catch (_) {}
+        function walk(directory, relative) {
+          var names;
+          try { names = fs.readdir(directory); } catch (_) { return; }
+          names.forEach(function (name) {
+            if (name === '.' || name === '..') return;
+            var full = directory + '/' + name;
+            var rel = relative ? relative + '/' + name : name;
+            var stat;
+            try { stat = fs.stat(full); } catch (_) { return; }
+            if (fs.isDir(stat.mode)) walk(full, rel);
+            else if (/^[A-Za-z0-9._/-]+$/.test(rel)) paths.push('saves/' + rel);
+          });
+        }
+        walk(saveRoot + '/saves', '');
+        paths.sort();
+        return paths;
+      }
+
+      function saveInventory(paths) {
+        var fs = Module && Module.FS;
+        if (!fs) return '';
+        return paths.map(function (relative) {
+          try {
+            var stat = fs.stat(saveRoot + '/' + relative);
+            var modified = stat.mtime instanceof Date ? stat.mtime.getTime() : Number(stat.mtime) || 0;
+            return relative + ':' + Number(stat.size || 0) + ':' + modified;
+          } catch (_) {
+            return relative + ':missing';
+          }
+        }).join('|');
+      }
+
+      function collectSaveFiles(paths) {
+        var fs = Module && Module.FS;
+        if (!fs) return [];
+        var files = [];
+        paths.forEach(function (relative) {
+          try {
+            var bytes = fs.readFile(saveRoot + '/' + relative, { encoding: 'binary' });
+            files.push({ path: relative, base64: bytesToBase64(bytes) });
+          } catch (_) {}
+        });
+        return files;
+      }
+
+      function snapshotWithoutSync() {
+        if (snapshotBusy || !gameLoaded || !Module || !Module.FS) return Promise.resolve(false);
+        var paths = listSavePaths();
+        var inventory = saveInventory(paths);
+        if (lastSnapshotInventory === inventory) {
+          diagnostic('save', 'debug', 'snapshot_skipped_unchanged', 'files=' + paths.length + ' synchronized=false');
+          return Promise.resolve(true);
+        }
+        snapshotBusy = true;
+        var files = collectSaveFiles(paths);
+        diagnostic('save', 'debug', 'snapshot_begin', 'files=' + files.length + ' synchronized=false');
+        return postNative('saveSnapshot', { files: files, complete: true }).then(function (result) {
+          snapshotBusy = false;
+          if (result != null) lastSnapshotInventory = inventory;
+          diagnostic('save', result == null ? 'warning' : 'debug', 'snapshot_complete', 'files=' + files.length + ' accepted=' + (result != null));
+          return result != null;
+        });
+      }
+
+      function syncAndSnapshot() {
+        if (snapshotBusy || !gameLoaded || !Module || !Module.FS) return Promise.resolve(false);
+        snapshotBusy = true;
+        diagnostic('save', 'info', 'sync_begin', 'Flushing IDBFS before final native save mirroring.');
+        return new Promise(function (resolve) {
+          Module.FS.syncfs(false, function (error) {
+            if (error) {
+              snapshotBusy = false;
+              diagnostic('save', 'error', 'sync_failed', error && error.stack ? error.stack : String(error));
+              postNative('runtimeStatus', { kind: 'warning', message: 'Save synchronization failed.' });
+              resolve(false);
+              return;
+            }
+            var paths = listSavePaths();
+            var inventory = saveInventory(paths);
+            var files = collectSaveFiles(paths);
+            postNative('saveSnapshot', { files: files, complete: true }).then(function (result) {
+              snapshotBusy = false;
+              if (result != null) lastSnapshotInventory = inventory;
+              diagnostic('save', result == null ? 'warning' : 'info', 'sync_complete', 'files=' + files.length + ' accepted=' + (result != null));
+              resolve(result != null);
+            });
+          });
+        });
+      }
+      window.Gen1RecompHost = { syncAndSnapshot: syncAndSnapshot };
+
+      var originalLog = console.log.bind(console);
+      var originalError = console.error.bind(console);
+      function runtimePrint() {
+        var text = Array.prototype.map.call(arguments, String).join('\t');
+        originalLog.apply(console, arguments);
+        var assetStatus = text.match(/\[native-assets\] (queued|progress|complete|failed) ([A-Za-z0-9_-]+)(?: (\d+))?/);
+        if (assetStatus) {
+          if (assetStatus[1] === 'complete' || assetStatus[1] === 'failed') {
+            modWorkText.textContent = assetStatus[1] === 'complete'
+              ? 'Mod assets are ready' : 'A mod asset task failed';
+            setTimeout(function () { modWork.hidden = true; }, 2200);
+          } else {
+            modWork.hidden = false;
+            modWorkText.textContent = assetStatus[1] === 'progress'
+              ? 'Optimizing mod assets · ' + assetStatus[3] + ' files'
+              : 'Optimizing mod assets in the background…';
+          }
+        }
+        if (text.indexOf('[native-lua-error]') !== -1) {
+          diagnostic('love', 'fatal', 'lua_error', text);
+          postNative('runtimeStatus', { kind: 'error', message: text });
+          setTimeout(snapshotWithoutSync, 0);
+        }
+        if (text.indexOf('[gen1-layer]') !== -1) {
+          diagnostic('layer', 'info', 'activation', text);
+        }
+        if (text.indexOf('[info] game loaded') !== -1) {
+          gameLoaded = true;
+          window.Gen1RecompGameLoaded = true;
+          resetMetrics(performance.now());
+          diagnostic('love', 'info', 'game_loaded', text);
+          postNative('runtimeStatus', { kind: 'ready', message: 'Gen1Recomp is running.' });
+          setTimeout(snapshotWithoutSync, 3000);
+        }
+      }
+      function runtimeError() {
+        var text = Array.prototype.map.call(arguments, function (value) {
+          return diagnostics && diagnostics.valueText ? diagnostics.valueText(value) : String(value);
+        }).join(' ');
+        originalError.apply(console, arguments);
+        postNative('runtimeStatus', { kind: 'log', message: text });
+      }
+
+      var injectedWasm;
+      try {
+        if (window.Gen1Launch && window.Gen1Launch.binaryTransport
+            && window.Gen1BinaryTransport && typeof window.Gen1BinaryTransport.take === 'function') {
+          diagnostic('wasm', 'info', 'transport_take_begin', 'Taking the preallocated WebAssembly payload.');
+          injectedWasm = window.Gen1BinaryTransport.take('wasm');
+          diagnostic('wasm', 'info', 'transport_take_complete', 'bytes=' + injectedWasm.byteLength);
+        } else {
+          // Read-only compatibility for launch envelopes produced before 3.4.
+          if (!window.Gen1Launch || typeof window.Gen1Launch.wasmBase64 !== 'string') {
+            throw new Error('The native WebAssembly injection is missing.');
+          }
+          diagnostic('wasm', 'warning', 'legacy_base64_decode_begin', 'base64Characters=' + window.Gen1Launch.wasmBase64.length);
+          var wasmRaw = atob(window.Gen1Launch.wasmBase64);
+          injectedWasm = new Uint8Array(wasmRaw.length);
+          for (var wasmIndex = 0; wasmIndex < wasmRaw.length; ++wasmIndex) {
+            injectedWasm[wasmIndex] = wasmRaw.charCodeAt(wasmIndex);
+          }
+          window.Gen1Launch.wasmBase64 = '';
+          diagnostic('wasm', 'info', 'legacy_base64_decode_complete', 'bytes=' + injectedWasm.length);
+        }
+      } catch (error) {
+        var wasmFailure = error instanceof Error ? error.message + (error.stack ? '\n' + error.stack : '') : String(error);
+        diagnostic('wasm', 'fatal', 'transport_failed', wasmFailure);
+        showFatal(wasmFailure);
+        return;
+      }
+
+      window.Module = {
+        arguments: ['./game.love'],
+        INITIAL_MEMORY: 268435456,
+        wasmBinary: injectedWasm,
+        webGLContextAttributes: { antialias: true, alpha: true },
+        print: runtimePrint,
+        printErr: runtimeError,
+        canvas: canvas,
+        setStatus: function (text) {
+          if (text) {
+            setStatus(text);
+          } else if (Module.remainingDependencies === 0) {
+            loading.hidden = true;
+            canvas.style.visibility = 'visible';
+            canvas.focus();
+            resizeRuntime();
+          }
+        },
+        totalDependencies: 0,
+        remainingDependencies: 0,
+        monitorRunDependencies: function (left) {
+          this.remainingDependencies = left;
+          this.totalDependencies = Math.max(this.totalDependencies, left);
+          var complete = this.totalDependencies ? (this.totalDependencies - left) / this.totalDependencies : 0;
+          setStatus(left ? 'Preparing local resources…' : 'Starting Gen1Recomp…', complete);
+        },
+        onAbort: function (reason) {
+          var detail = diagnostics && diagnostics.valueText ? diagnostics.valueText(reason) : String(reason);
+          diagnostic('emscripten', 'fatal', 'abort', detail);
+          postNative('runtimeStatus', { kind: 'error', message: detail });
+          if (gameLoaded) requestPlayerClose({ reason: 'emscripten-abort-after-ready', message: detail }, detail);
+          else showFatal(detail);
+        },
+        onExit: function (status) {
+          diagnostic('emscripten', 'info', 'exit', 'status=' + status);
+          postNative('runtimeStatus', { kind: 'exit', message: 'status=' + status });
+          requestPlayerClose({ reason: 'emscripten-exit', status: status }, 'The local runtime exited with status ' + status + '. Retry Close player.');
+        },
+        onRuntimeInitialized: function () {
+          diagnostic('emscripten', 'info', 'runtime_initialized', 'The WebAssembly runtime initialized.');
+          Module.wasmBinary = null;
+          injectedWasm = null;
+          resizeRuntime();
+          setTimeout(resizeRuntime, 250);
+          setTimeout(resizeRuntime, 1000);
+          setTimeout(resizeRuntime, 2500);
+        }
+      };
+
+      window.addEventListener('resize', function () {
+        diagnostic('browser', 'debug', 'resize', window.innerWidth + 'x' + window.innerHeight + ' scale=' + (window.devicePixelRatio || 1));
+        resizeRuntime();
+      }, { passive: true });
+      window.addEventListener('orientationchange', function () {
+        diagnostic('browser', 'info', 'orientation_change', String(screen.orientation && screen.orientation.type || 'unknown'));
+        setTimeout(resizeRuntime, 100);
+      }, { passive: true });
+      window.addEventListener('keydown', function (event) {
+        if ([32, 37, 38, 39, 40].indexOf(event.keyCode) !== -1) event.preventDefault();
+      }, false);
+      window.addEventListener('error', function (event) {
+        var message = event && event.message ? event.message : 'A browser runtime error occurred.';
+        var detail = message + (event && event.error && event.error.stack ? '\n' + event.error.stack : '');
+        if (gameLoaded) {
+          requestPlayerClose({ reason: 'window-error-after-ready', message: detail }, detail);
+        } else {
+          showFatal(detail);
+        }
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        var detail = diagnostics && diagnostics.valueText
+          ? diagnostics.valueText(event ? event.reason : undefined) : String(event && event.reason);
+        if (gameLoaded) {
+          requestPlayerClose({ reason: 'unhandled-rejection-after-ready', message: detail }, detail);
+        } else {
+          showFatal(detail);
+        }
+      });
+      ['webglcontextcreationerror', 'webglcontextlost', 'webglcontextrestored'].forEach(function (name) {
+        canvas.addEventListener(name, function (event) {
+          var detail = event && event.statusMessage ? event.statusMessage : name;
+          diagnostic('webgl', name === 'webglcontextrestored' ? 'info' : 'fatal', name, detail);
+          if (name !== 'webglcontextrestored' && event && typeof event.preventDefault === 'function') event.preventDefault();
+        });
+      });
+      document.addEventListener('visibilitychange', function () {
+        diagnostic('browser', 'debug', 'visibility_change', document.visibilityState);
+        if (document.visibilityState === 'hidden') snapshotWithoutSync();
+      });
+      window.addEventListener('pagehide', function () {
+        diagnostic('browser', 'info', 'pagehide', 'The local player page is leaving.');
+        if (diagnostics && typeof diagnostics.flush === 'function') diagnostics.flush();
+        snapshotWithoutSync();
+      });
+      setInterval(snapshotWithoutSync, saveSyncSeconds * 1000);
+
+      setStatus('Loading local game package…', 0.04);
+      window.applicationLoad = function () {
+        diagnostic('emscripten', 'info', 'application_load', 'Calling the local love.js factory.');
+        try { Love(Module); }
+        catch (error) {
+          var detail = error instanceof Error ? error.message + (error.stack ? '\n' + error.stack : '') : String(error);
+          diagnostic('emscripten', 'fatal', 'application_load_failed', detail);
+          showFatal(detail);
+        }
+      };
+    })();
+  </script>
+  <script src="game.js"></script>
+  <script async src="love.js" onload="applicationLoad()"></script>
+</body>
+</html>
